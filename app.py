@@ -8,7 +8,7 @@ import numpy as np
 
 st.set_page_config(page_title="Analista Epidemiológico Pro", layout="wide")
 
-# Tabelas de Apoio Geográfico
+# Mapeamento Geográfico Brasileiro (Baseado no IBGE)
 MAPA_ESTADOS = {
     '11': 'RO', '12': 'AC', '13': 'AM', '14': 'RR', '15': 'PA', '16': 'AP', '17': 'TO',
     '21': 'MA', '22': 'PI', '23': 'CE', '24': 'RN', '25': 'PB', '26': 'PE', '27': 'AL', '28': 'SE', '29': 'BA',
@@ -47,7 +47,7 @@ def processar_dados(df):
     return df_long
 
 st.title("📊 Análise de Tendência de Mann-Kendall")
-st.markdown("Ferramenta universal para análise de séries temporais epidemiológicas.")
+st.markdown("Análise estatística de séries temporais com filtros geográficos multinível.")
 
 uploaded_file = st.file_uploader("Arraste seu arquivo CSV do TabNet aqui", type=['csv'])
 
@@ -58,8 +58,7 @@ if uploaded_file:
         df_final = processar_dados(df_raw)
         
         if df_final is not None:
-            # --- FILTROS LATERAIS ---
-            st.sidebar.header("🗺️ Localidade")
+            st.sidebar.header("🗺️ Filtros de Localidade")
             nivel = st.sidebar.radio("Nível Geográfico:", ("País (Total)", "Região", "Estado", "Município"))
             
             if nivel == "País (Total)":
@@ -80,52 +79,50 @@ if uploaded_file:
                 label = mun
 
             serie = df_temp.groupby('Ano')['Casos'].sum().sort_index()
-            # Focar no período 2014-2023 (conforme arquivo enviado)
-            serie = serie[(serie.index >= 2014) & (serie.index <= 2024)]
+            # Ajuste de período conforme o arquivo de Dengue enviado
+            serie = serie[(serie.index >= 2014) & (serie.index <= 2023)]
 
             if len(serie) > 3:
                 # CÁLCULO MANN-KENDALL (HAMED & RAO)
                 res = mk.hamed_rao_modification_test(serie)
                 
-                # --- MÉTRICAS ---
+                # MÉTRICAS
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Tendência", res.trend.capitalize())
                 c2.metric("P-Valor", f"{res.p:.4f}")
                 c3.metric("Z-Score", f"{res.z:.2f}")
                 c4.metric("Total de Casos", int(serie.sum()))
 
-                # --- GRÁFICO PERSONALIZADO ---
-                [Image of a time series plot showing Mann-Kendall trend line and Sen's slope]
+                # GRÁFICO PROFISSIONAL
                 fig, ax = plt.subplots(figsize=(12, 6))
                 
-                # Dados reais (pontos e linha fina)
+                # Dados Observados
                 sns.lineplot(x=serie.index, y=serie.values, marker='o', markersize=8, 
-                             color='#2c3e50', label='Casos Notificados', ax=ax, linewidth=1, alpha=0.7)
+                             color='#2c3e50', label='Casos Notificados', ax=ax, linewidth=1.5)
                 
-                # Linha de Tendência (Sen's Slope)
-                # Equação: y = slope * (x - x0) + intercept
-                x = np.arange(len(serie))
-                y_slope = res.slope * x + serie.values[0] # Estimativa visual da reta
+                # Cálculo da Reta de Tendência (Sen's Slope)
+                # y = slope * x + intercept
+                x_vals = np.arange(len(serie))
+                intercept = serie.values[0]
+                y_trend = res.slope * x_vals + intercept
                 
-                plt.plot(serie.index, y_slope, color='#e74c3c', linestyle='--', 
-                         linewidth=2, label=f'Tendência ({res.trend})')
+                ax.plot(serie.index, y_trend, color='#e74c3c', linestyle='--', 
+                        linewidth=2, label=f'Tendência de {res.trend}')
 
-                # Estética do Gráfico
-                ax.set_title(f"Evolução Temporal e Tendência em: {label}", fontsize=16, pad=20)
-                ax.set_ylabel("Nº de Notificações", fontsize=12)
-                ax.set_xlabel("Ano", fontsize=12)
+                ax.set_title(f"Série Temporal e Inclinação de Tendência: {label}", fontsize=16)
+                ax.set_ylabel("Quantidade de Casos")
+                ax.set_xlabel("Ano")
                 plt.xticks(serie.index)
                 plt.grid(True, linestyle=':', alpha=0.6)
-                plt.legend(frameon=True, facecolor='white')
+                plt.legend()
                 
                 st.pyplot(fig)
                 
-                # Interpretação
                 if res.p < 0.05:
-                    st.success(f"📢 Análise Científica: Existe uma tendência de **{res.trend}** estatisticamente significativa para {label}.")
+                    st.success(f"Significância estatística confirmada (p < 0.05) para {label}.")
                 else:
-                    st.info(f"📢 Análise Científica: Não foi detectada tendência significativa (estabilidade) em {label}.")
+                    st.info(f"Sem tendência estatística significativa para {label}.")
             else:
-                st.warning("Dados insuficientes para rodar o teste estatístico.")
+                st.warning("Dados insuficientes para análise neste nível.")
     except Exception as e:
-        st.error(f"Ocorreu um erro: {e}")
+        st.error(f"Erro ao processar o arquivo: {e}")
