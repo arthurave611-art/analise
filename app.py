@@ -8,7 +8,7 @@ import numpy as np
 
 st.set_page_config(page_title="Analista Epidemiológico Pro", layout="wide")
 
-# Mapeamento Geográfico Brasileiro (Baseado no IBGE)
+# Mapeamento Geográfico Brasileiro (IBGE)
 MAPA_ESTADOS = {
     '11': 'RO', '12': 'AC', '13': 'AM', '14': 'RR', '15': 'PA', '16': 'AP', '17': 'TO',
     '21': 'MA', '22': 'PI', '23': 'CE', '24': 'RN', '25': 'PB', '26': 'PE', '27': 'AL', '28': 'SE', '29': 'BA',
@@ -46,19 +46,20 @@ def processar_dados(df):
     df_long[['Regiao', 'Estado', 'Municipio']] = pd.DataFrame(geos.tolist(), index=df_long.index)
     return df_long
 
-st.title("📊 Validador Epidemiológico: Mann-Kendall (Hamed & Rao)")
+st.title("📊 Análise de Tendência de Mann-Kendall (Hamed & Rao)")
 
-uploaded_file = st.file_uploader("Suba o arquivo CSV para validação", type=['csv'])
+uploaded_file = st.file_uploader("Suba o arquivo CSV do TabNet", type=['csv'])
 
 if uploaded_file:
     try:
+        # Leitura padrão TabNet
         df_raw = pd.read_csv(uploaded_file, sep=';', encoding='ISO-8859-1')
         df_raw = df_raw[~df_raw.iloc[:, 0].astype(str).str.contains('Total|TOTAL|Incompleto|Fonte', na=False)]
         df_final = processar_dados(df_raw)
         
         if df_final is not None:
             st.sidebar.header("🔍 Filtros Geográficos")
-            nivel = st.sidebar.radio("Nível:", ("País (Total)", "Região", "Estado", "Município"))
+            nivel = st.sidebar.radio("Nível Geográfico:", ("País (Total)", "Região", "Estado", "Município"))
             
             if nivel == "País (Total)":
                 df_temp = df_final
@@ -77,51 +78,53 @@ if uploaded_file:
                 df_temp = df_final[df_final['Municipio'] == mun]
                 label = mun
 
+            # Agrupamento anual e ordenação
             serie = df_temp.groupby('Ano')['Casos'].sum().sort_index()
-            # Período de estudo fixado para consistência
-            serie = serie[(serie.index >= 2014) & (serie.index <= 2024)]
 
             if len(serie) > 3:
-                # CÁLCULO ESTATÍSTICO ROBUSTO
+                # CÁLCULO ESTATÍSTICO HAMED & RAO
                 res = mk.hamed_rao_modification_test(serie)
                 
-                # --- MÉTRICAS ---
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Tendência", res.trend.capitalize())
-                c2.metric("P-Valor", f"{res.p:.4f}")
-                c3.metric("Z-Score", f"{res.z:.2f}")
-                c4.metric("Slope (Sen)", f"{res.slope:.2f}")
+                # --- TABELA DE MÉTRICAS (Conforme solicitado) ---
+                st.subheader(f"Métricas do Teste - {label}")
+                df_metrics = pd.DataFrame({
+                    "Métrica": ["Tendência", "h", "Valor-p", "Estatística Z", "Tau de Kendall", "Inclinação de Sen"],
+                    "Resultado": [
+                        res.trend, 
+                        str(res.h), 
+                        f"{res.p:.8f}", 
+                        f"{res.z:.8f}", 
+                        f"{res.tau:.8f}", 
+                        f"{res.slope:.8f}"
+                    ]
+                })
+                st.table(df_metrics)
 
-                # --- GRÁFICO CIENTÍFICO ---
+                # --- GRÁFICO ---
                 fig, ax = plt.subplots(figsize=(12, 6))
                 
-                # 1. Dados Reais
+                # Dados observados
                 sns.lineplot(x=serie.index, y=serie.values, marker='o', markersize=8, 
-                             color='#2c3e50', label='Dados Observados', ax=ax, linewidth=1.5)
+                             color='#2c3e50', label='Casos Notificados', ax=ax, linewidth=1.5)
                 
-                # 2. Linha de Tendência de Sen (Correta)
-                # A reta deve passar pela mediana dos dados para ser estatisticamente fiel
+                # Reta de Tendência (Sen's Slope)
+                # Calculando o intercepto correto baseado na mediana para cruzar os dados
                 x_idx = np.arange(len(serie))
                 intercept = np.median(serie.values) - res.slope * np.median(x_idx)
                 y_trend = res.slope * x_idx + intercept
                 
                 ax.plot(serie.index, y_trend, color='#e74c3c', linestyle='--', 
-                        linewidth=2.5, label=f'Reta de Tendência (Slope: {res.slope:.2f})')
+                        linewidth=2.5, label=f'Tendência (Inclinação: {res.slope:.2f})')
 
-                ax.set_title(f"Análise de Tendência Temporal - {label}", fontsize=15)
-                ax.set_ylabel("Nº de Casos")
+                ax.set_title(f"Série Temporal e Tendência: {label}", fontsize=15)
+                ax.set_ylabel("Notificações")
                 plt.xticks(serie.index)
                 plt.grid(True, linestyle=':', alpha=0.6)
                 plt.legend()
                 
                 st.pyplot(fig)
                 
-                # Alerta de Significância
-                if res.p < 0.05:
-                    st.success(f"✅ Significância estatística confirmada (p < 0.05). A tendência é de {res.trend}.")
-                else:
-                    st.warning("⚠️ Não há evidência estatística de tendência clara (p >= 0.05).")
             else:
-                st.info("Série temporal muito curta para análise estatística.")
+                st.info("Série temporal muito curta para o teste.")
     except Exception as e:
-        st.error(f"Erro no processamento: {e}")
+        st.error(f"Erro ao processar: {e}")
