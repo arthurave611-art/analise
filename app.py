@@ -4,11 +4,12 @@ import pymannkendall as mk
 import matplotlib.pyplot as plt
 import numpy as np
 import re
+from statsmodels.tsa.seasonal import STL
 
 st.set_page_config(page_title="CalculaAí - Bioestatística", layout="wide")
 
 # ---------------------------
-# MAPEAMENTO IBGE
+# MAPAS IBGE
 # ---------------------------
 MAPA_ESTADOS = {
 '11':'RO','12':'AC','13':'AM','14':'RR','15':'PA','16':'AP','17':'TO',
@@ -54,7 +55,6 @@ def processar_tabela(df):
         value_name='Casos'
     )
 
-    # limpeza padrão DATASUS
     df_long['Casos'] = (
         df_long['Casos']
         .astype(str)
@@ -79,32 +79,34 @@ def processar_tabela(df):
     return df_long
 
 
-def montar_serie_temporal(df, periodo):
+def serie_anual(df, periodo):
     serie = (
         df.groupby('Ano')['Casos']
         .sum()
         .sort_index()
     )
-
     serie = serie.loc[periodo[0]:periodo[1]]
+    return serie.values.astype(float), serie.index.values
 
-    # garantir continuidade temporal
-    idx = pd.date_range(
-        start=str(periodo[0]),
-        end=str(periodo[1]),
-        freq='YS'
+
+def serie_mensal(df, periodo):
+    df['Data'] = pd.to_datetime(df['Periodo'], format='%Y%m')
+    serie = (
+        df.groupby('Data')['Casos']
+        .sum()
+        .sort_index()
     )
-
-    serie.index = pd.to_datetime(serie.index, format='%Y')
-    serie = serie.reindex(idx, fill_value=0)
-
-    return serie.values.astype(float), idx.year
+    serie = serie[
+        (serie.index.year >= periodo[0]) &
+        (serie.index.year <= periodo[1])
+    ]
+    return serie
 
 
 # ---------------------------
 # APP
 # ---------------------------
-st.title("📊 Teste Mann-Kendall Modificado (Hamed & Rao)")
+st.title("📊 Análise de Tendência Epidemiológica")
 
 file = st.file_uploader("Upload CSV DATASUS", type=['csv'])
 
@@ -125,13 +127,13 @@ if file:
     df_final = processar_tabela(df_raw)
 
     # ---------------------------
-    # FILTROS
+    # SIDEBAR
     # ---------------------------
-    st.sidebar.header("Filtros")
+    st.sidebar.header("Configurações")
 
     nivel = st.sidebar.radio(
-        "Nível geográfico",
-        ("Brasil","Região","Estado","Município")
+        "Nível",
+        ("Brasil","Região","Estado")
     )
 
     if nivel == "Brasil":
@@ -146,34 +148,13 @@ if file:
         df_temp = df_final[df_final['Regiao']==r]
         local = r
 
-    elif nivel == "Estado":
+    else:
         e = st.sidebar.selectbox(
             "Estado",
             sorted(df_final['Estado'].unique())
         )
         df_temp = df_final[df_final['Estado']==e]
         local = e
-
-    else:
-        uf = st.sidebar.selectbox(
-            "UF",
-            sorted(df_final['Estado'].unique())
-        )
-
-        mun = st.sidebar.selectbox(
-            "Município",
-            sorted(
-                df_final[
-                    df_final['Estado']==uf
-                ]['Municipio'].unique()
-            )
-        )
-
-        df_temp = df_final[
-            df_final['Municipio']==mun
-        ]
-
-        local = mun
 
     anos = sorted(df_final['Ano'].unique())
 
@@ -183,33 +164,84 @@ if file:
         value=(2014,2023)
     )
 
-    # ---------------------------
-    # SÉRIE TEMPORAL
-    # ---------------------------
-    serie_values, anos_plot = montar_serie_temporal(
-        df_temp,
-        periodo
+    tipo_serie = st.sidebar.radio(
+        "Tipo de série",
+        ("Anual","Mensal","STL (artigo)")
     )
 
+    usar_hr = st.sidebar.checkbox(
+        "Usar Hamed-Rao (corrigir autocorrelação)",
+        value=True
+    )
+
+    cor_linha = st.sidebar.color_picker(
+        "Cor da série",
+        "#1f77b4"
+    )
+
+    largura = st.sidebar.slider(
+        "Espessura da linha",
+        1,
+        5,
+        2
+    )
+
+    tamanho = st.sidebar.slider(
+        "Tamanho gráfico",
+        6,
+        18,
+        12
+    )
+
+    # ---------------------------
+    # SÉRIE
+    # ---------------------------
+    if tipo_serie == "Anual":
+
+        serie_values, eixo = serie_anual(
+            df_temp,
+            periodo
+        )
+
+    else:
+
+        serie = serie_mensal(
+            df_temp,
+            periodo
+        )
+
+        if tipo_serie == "STL (artigo)":
+            stl = STL(serie, period=12)
+            res = stl.fit()
+            serie_values = res.trend.dropna().values
+            eixo = np.arange(len(serie_values))
+        else:
+            serie_values = serie.values
+            eixo = np.arange(len(serie_values))
+
     if len(serie_values) < 4:
-        st.warning("Série muito curta.")
+        st.warning("Série insuficiente.")
         st.stop()
 
     # ---------------------------
-    # TESTE MANN-KENDALL
+    # TESTE
     # ---------------------------
-    res_hr = mk.hamed_rao_modification_test(
-        serie_values,
-        alpha=0.05,
-        lag=1
-    )
+    if usar_hr:
+        resultado = mk.hamed_rao_modification_test(
+            serie_values
+        )
+    else:
+        resultado = mk.original_test(
+            serie_values
+        )
 
     res_orig = mk.original_test(serie_values)
 
-    # CORREÇÃO DO TAU (compatível com qualquer versão)
-    tau_val = getattr(res_orig, "tau", getattr(res_orig, "Tau", np.nan))
-
-    st.subheader(f"Resultados - {local}")
+    tau_val = getattr(
+        res_orig,
+        "tau",
+        getattr(res_orig,"Tau",np.nan)
+    )
 
     tabela = pd.DataFrame({
         "Métrica":[
@@ -221,40 +253,51 @@ if file:
             "Sen slope"
         ],
         "Resultado":[
-            res_hr.trend,
-            res_hr.h,
-            res_hr.p,
-            res_hr.z,
+            resultado.trend,
+            resultado.h,
+            resultado.p,
+            resultado.z,
             tau_val,
-            res_hr.slope
+            resultado.slope
         ]
     })
 
+    st.subheader(f"Resultados - {local}")
     st.table(tabela)
 
     # ---------------------------
     # GRÁFICO
     # ---------------------------
-    fig, ax = plt.subplots(figsize=(12,5))
+    fig, ax = plt.subplots(
+        figsize=(tamanho,5)
+    )
 
     ax.plot(
-        anos_plot,
+        eixo,
         serie_values,
-        marker='o',
-        linewidth=2
+        linewidth=largura,
+        color=cor_linha,
+        marker='o'
     )
 
     x = np.arange(len(serie_values))
-    intercept = np.mean(serie_values) - res_hr.slope*np.mean(x)
+    intercept = np.mean(serie_values) - resultado.slope*np.mean(x)
 
     ax.plot(
-        anos_plot,
-        res_hr.slope*x + intercept,
-        linestyle='--',
-        linewidth=2
+        eixo,
+        resultado.slope*x + intercept,
+        linestyle='--'
     )
 
-    ax.set_title(f"Dengue - {local}")
     ax.grid(True)
 
     st.pyplot(fig)
+
+    # ---------------------------
+    # EXPORTAR
+    # ---------------------------
+    st.download_button(
+        "Baixar resultados CSV",
+        tabela.to_csv(index=False),
+        file_name="resultado_mann_kendall.csv"
+    )
