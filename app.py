@@ -1,4 +1,9 @@
 import streamlit as st
+
+# No topo do app.py
+st.sidebar.success("Selecione uma análise acima.")
+
+import streamlit as st
 import pandas as pd
 import pymannkendall as mk
 import matplotlib.pyplot as plt
