@@ -6,10 +6,9 @@ import seaborn as sns
 import re
 import numpy as np
 
-# Configuração da página
 st.set_page_config(page_title="Analista Epidemiológico Pro", layout="wide")
 
-# Mapeamento Geográfico Brasileiro (IBGE)
+# Tabelas de Apoio Geográfico (IBGE)
 MAPA_ESTADOS = {
     '11': 'RO', '12': 'AC', '13': 'AM', '14': 'RR', '15': 'PA', '16': 'AP', '17': 'TO',
     '21': 'MA', '22': 'PI', '23': 'CE', '24': 'RN', '25': 'PB', '26': 'PE', '27': 'AL', '28': 'SE', '29': 'BA',
@@ -48,20 +47,18 @@ def processar_dados(df):
     return df_long
 
 st.title("📊 Análise de Tendência de Mann-Kendall (Hamed & Rao)")
-st.markdown("Modelo baseado na metodologia de Ecológicos Avançados.")
 
-uploaded_file = st.file_uploader("Suba o arquivo CSV (Dengue, Hanseníase, etc)", type=['csv'])
+uploaded_file = st.file_uploader("Suba o arquivo CSV do TabNet", type=['csv'])
 
 if uploaded_file:
     try:
-        # Leitura padrão DATASUS
         df_raw = pd.read_csv(uploaded_file, sep=';', encoding='ISO-8859-1')
         df_raw = df_raw[~df_raw.iloc[:, 0].astype(str).str.contains('Total|TOTAL|Incompleto|Fonte', na=False)]
         df_final = processar_dados(df_raw)
         
         if df_final is not None:
-            st.sidebar.header("📍 Filtros Geográficos")
-            nivel = st.sidebar.radio("Nível:", ("País (Total)", "Região", "Estado", "Município"))
+            st.sidebar.header("🔍 Filtros Geográficos")
+            nivel = st.sidebar.radio("Nível Geográfico:", ("País (Total)", "Região", "Estado", "Município"))
             
             if nivel == "País (Total)":
                 df_temp = df_final
@@ -80,17 +77,16 @@ if uploaded_file:
                 df_temp = df_final[df_final['Municipio'] == mun]
                 label = mun
 
-            # Agrupa dados por ano
             serie = df_temp.groupby('Ano')['Casos'].sum().sort_index()
 
             if len(serie) > 3:
                 # CÁLCULOS ESTATÍSTICOS
-                # 1. Hamed e Rao para significância (P e Z corrigidos)
+                # 1. Hamed e Rao para P e Z corrigidos
                 res_hr = mk.hamed_rao_modification_test(serie)
-                # 2. Teste original apenas para extrair o Tau de Kendall (que é constante)
+                # 2. Teste Original para extrair o Tau de Kendall
                 res_orig = mk.original_test(serie)
                 
-                # --- TABELA DE RESULTADOS (FORMATO SOLICITADO) ---
+                # --- TABELA DE RESULTADOS (PADRÃO PESQUISA AÍ) ---
                 st.subheader(f"Métricas do Teste - {label}")
                 metrics_data = {
                     "Métrica": ["Tendência", "h", "Valor-p", "Estatística Z", "Tau de Kendall", "Inclinação de Sen"],
@@ -112,16 +108,15 @@ if uploaded_file:
                 sns.lineplot(x=serie.index, y=serie.values, marker='o', markersize=8, 
                              color='#2c3e50', label='Dados Observados', ax=ax, linewidth=1.5)
                 
-                # Reta de Tendência (Sen's Slope)
+                # Reta de Tendência
                 x_idx = np.arange(len(serie))
                 intercept = np.median(serie.values) - res_hr.slope * np.median(x_idx)
                 y_trend = res_hr.slope * x_idx + intercept
                 
                 ax.plot(serie.index, y_trend, color='#e74c3c', linestyle='--', 
-                        linewidth=2.5, label=f'Tendência (Inclinação: {res_hr.slope:.2f})')
+                        linewidth=2.5, label=f'Tendência (Slope: {res_hr.slope:.2f})')
 
-                ax.set_title(f"Série Temporal e Reta de Tendência: {label}", fontsize=15)
-                ax.set_ylabel("Quantidade de Casos")
+                ax.set_title(f"Série Temporal e Tendência: {label}", fontsize=15)
                 plt.xticks(serie.index)
                 plt.grid(True, linestyle=':', alpha=0.6)
                 plt.legend()
@@ -129,6 +124,6 @@ if uploaded_file:
                 st.pyplot(fig)
                 
             else:
-                st.info("Série temporal muito curta para análise estatística.")
+                st.info("Série temporal muito curta.")
     except Exception as e:
-        st.error(f"Erro no processamento: {e}")
+        st.error(f"Erro ao processar: {e}")
