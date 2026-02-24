@@ -52,7 +52,6 @@ uploaded_file = st.file_uploader("Suba o arquivo CSV do TabNet", type=['csv'])
 
 if uploaded_file:
     try:
-        # Leitura padrão TabNet
         df_raw = pd.read_csv(uploaded_file, sep=';', encoding='ISO-8859-1')
         df_raw = df_raw[~df_raw.iloc[:, 0].astype(str).str.contains('Total|TOTAL|Incompleto|Fonte', na=False)]
         df_final = processar_dados(df_raw)
@@ -78,43 +77,41 @@ if uploaded_file:
                 df_temp = df_final[df_final['Municipio'] == mun]
                 label = mun
 
-            # Agrupamento anual e ordenação
             serie = df_temp.groupby('Ano')['Casos'].sum().sort_index()
 
             if len(serie) > 3:
                 # CÁLCULO ESTATÍSTICO HAMED & RAO
                 res = mk.hamed_rao_modification_test(serie)
                 
-                # --- TABELA DE MÉTRICAS (Conforme solicitado) ---
+                # --- TABELA DE MÉTRICAS FORMATADA ---
                 st.subheader(f"Métricas do Teste - {label}")
-                df_metrics = pd.DataFrame({
-                    "Métrica": ["Tendência", "h", "Valor-p", "Estatística Z", "Tau de Kendall", "Inclinação de Sen"],
+                
+                # Nota: O teste modificado não possui Tau de Kendall disponível no objeto de retorno do pymannkendall
+                metrics_data = {
+                    "Métrica": ["Tendência", "h", "Valor-p", "Estatística Z", "Inclinação de Sen"],
                     "Resultado": [
                         res.trend, 
                         str(res.h), 
                         f"{res.p:.8f}", 
                         f"{res.z:.8f}", 
-                        f"{res.tau:.8f}", 
                         f"{res.slope:.8f}"
                     ]
-                })
+                }
+                df_metrics = pd.DataFrame(metrics_data)
                 st.table(df_metrics)
 
                 # --- GRÁFICO ---
                 fig, ax = plt.subplots(figsize=(12, 6))
-                
-                # Dados observados
                 sns.lineplot(x=serie.index, y=serie.values, marker='o', markersize=8, 
-                             color='#2c3e50', label='Casos Notificados', ax=ax, linewidth=1.5)
+                             color='#2c3e50', label='Dados Observados', ax=ax, linewidth=1.5)
                 
-                # Reta de Tendência (Sen's Slope)
-                # Calculando o intercepto correto baseado na mediana para cruzar os dados
+                # Ajuste da Reta de Tendência
                 x_idx = np.arange(len(serie))
                 intercept = np.median(serie.values) - res.slope * np.median(x_idx)
                 y_trend = res.slope * x_idx + intercept
                 
                 ax.plot(serie.index, y_trend, color='#e74c3c', linestyle='--', 
-                        linewidth=2.5, label=f'Tendência (Inclinação: {res.slope:.2f})')
+                        linewidth=2.5, label=f'Tendência (Slope: {res.slope:.2f})')
 
                 ax.set_title(f"Série Temporal e Tendência: {label}", fontsize=15)
                 ax.set_ylabel("Notificações")
@@ -125,6 +122,6 @@ if uploaded_file:
                 st.pyplot(fig)
                 
             else:
-                st.info("Série temporal muito curta para o teste.")
+                st.info("Série temporal insuficiente.")
     except Exception as e:
         st.error(f"Erro ao processar: {e}")
