@@ -1,0 +1,9 @@
+streamlit
+pandas
+pysus
+pymannkendall
+esda
+libpysal
+geopandas
+matplotlib
+geobr
