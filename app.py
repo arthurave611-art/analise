@@ -46,10 +46,9 @@ def processar_dados(df):
     df_long[['Regiao', 'Estado', 'Municipio']] = pd.DataFrame(geos.tolist(), index=df_long.index)
     return df_long
 
-st.title("📊 Análise de Tendência de Mann-Kendall")
-st.markdown("Análise estatística de séries temporais com filtros geográficos multinível.")
+st.title("📊 Validador Epidemiológico: Mann-Kendall (Hamed & Rao)")
 
-uploaded_file = st.file_uploader("Arraste seu arquivo CSV do TabNet aqui", type=['csv'])
+uploaded_file = st.file_uploader("Suba o arquivo CSV para validação", type=['csv'])
 
 if uploaded_file:
     try:
@@ -58,8 +57,8 @@ if uploaded_file:
         df_final = processar_dados(df_raw)
         
         if df_final is not None:
-            st.sidebar.header("🗺️ Filtros de Localidade")
-            nivel = st.sidebar.radio("Nível Geográfico:", ("País (Total)", "Região", "Estado", "Município"))
+            st.sidebar.header("🔍 Filtros Geográficos")
+            nivel = st.sidebar.radio("Nível:", ("País (Total)", "Região", "Estado", "Município"))
             
             if nivel == "País (Total)":
                 df_temp = df_final
@@ -79,50 +78,50 @@ if uploaded_file:
                 label = mun
 
             serie = df_temp.groupby('Ano')['Casos'].sum().sort_index()
-            # Ajuste de período conforme o arquivo de Dengue enviado
-            serie = serie[(serie.index >= 2014) & (serie.index <= 2023)]
+            # Período de estudo fixado para consistência
+            serie = serie[(serie.index >= 2014) & (serie.index <= 2024)]
 
             if len(serie) > 3:
-                # CÁLCULO MANN-KENDALL (HAMED & RAO)
+                # CÁLCULO ESTATÍSTICO ROBUSTO
                 res = mk.hamed_rao_modification_test(serie)
                 
-                # MÉTRICAS
+                # --- MÉTRICAS ---
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Tendência", res.trend.capitalize())
                 c2.metric("P-Valor", f"{res.p:.4f}")
                 c3.metric("Z-Score", f"{res.z:.2f}")
-                c4.metric("Total de Casos", int(serie.sum()))
+                c4.metric("Slope (Sen)", f"{res.slope:.2f}")
 
-                # GRÁFICO PROFISSIONAL
+                # --- GRÁFICO CIENTÍFICO ---
                 fig, ax = plt.subplots(figsize=(12, 6))
                 
-                # Dados Observados
+                # 1. Dados Reais
                 sns.lineplot(x=serie.index, y=serie.values, marker='o', markersize=8, 
-                             color='#2c3e50', label='Casos Notificados', ax=ax, linewidth=1.5)
+                             color='#2c3e50', label='Dados Observados', ax=ax, linewidth=1.5)
                 
-                # Cálculo da Reta de Tendência (Sen's Slope)
-                # y = slope * x + intercept
-                x_vals = np.arange(len(serie))
-                intercept = serie.values[0]
-                y_trend = res.slope * x_vals + intercept
+                # 2. Linha de Tendência de Sen (Correta)
+                # A reta deve passar pela mediana dos dados para ser estatisticamente fiel
+                x_idx = np.arange(len(serie))
+                intercept = np.median(serie.values) - res.slope * np.median(x_idx)
+                y_trend = res.slope * x_idx + intercept
                 
                 ax.plot(serie.index, y_trend, color='#e74c3c', linestyle='--', 
-                        linewidth=2, label=f'Tendência de {res.trend}')
+                        linewidth=2.5, label=f'Reta de Tendência (Slope: {res.slope:.2f})')
 
-                ax.set_title(f"Série Temporal e Inclinação de Tendência: {label}", fontsize=16)
-                ax.set_ylabel("Quantidade de Casos")
-                ax.set_xlabel("Ano")
+                ax.set_title(f"Análise de Tendência Temporal - {label}", fontsize=15)
+                ax.set_ylabel("Nº de Casos")
                 plt.xticks(serie.index)
                 plt.grid(True, linestyle=':', alpha=0.6)
                 plt.legend()
                 
                 st.pyplot(fig)
                 
+                # Alerta de Significância
                 if res.p < 0.05:
-                    st.success(f"Significância estatística confirmada (p < 0.05) para {label}.")
+                    st.success(f"✅ Significância estatística confirmada (p < 0.05). A tendência é de {res.trend}.")
                 else:
-                    st.info(f"Sem tendência estatística significativa para {label}.")
+                    st.warning("⚠️ Não há evidência estatística de tendência clara (p >= 0.05).")
             else:
-                st.warning("Dados insuficientes para análise neste nível.")
+                st.info("Série temporal muito curta para análise estatística.")
     except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {e}")
+        st.error(f"Erro no processamento: {e}")
