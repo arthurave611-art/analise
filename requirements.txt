@@ -1,10 +1,11 @@
 streamlit
 pandas
 pysus
-pymannkendall
+pymannkendall==1.4.3
 esda
 libpysal
 geopandas
 matplotlib
 geobr
 seaborn
+numpy

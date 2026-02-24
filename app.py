@@ -206,6 +206,9 @@ if file:
 
     res_orig = mk.original_test(serie_values)
 
+    # CORREÇÃO DO TAU (compatível com qualquer versão)
+    tau_val = getattr(res_orig, "tau", getattr(res_orig, "Tau", np.nan))
+
     st.subheader(f"Resultados - {local}")
 
     tabela = pd.DataFrame({
@@ -222,7 +225,7 @@ if file:
             res_hr.h,
             res_hr.p,
             res_hr.z,
-            res_orig.tau,
+            tau_val,
             res_hr.slope
         ]
     })
