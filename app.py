@@ -6,9 +6,9 @@ import seaborn as sns
 import re
 import numpy as np
 
-st.set_page_config(page_title="Analisador Epidemiológico - Mann-Kendall", layout="wide")
+st.set_page_config(page_title="Analista Epidemiológico Pro", layout="wide")
 
-# Mapeamento Geográfico Brasileiro
+# Tabelas de Apoio Geográfico (Padrão IBGE/DATASUS)
 MAPA_ESTADOS = {
     '11': 'RO', '12': 'AC', '13': 'AM', '14': 'RR', '15': 'PA', '16': 'AP', '17': 'TO',
     '21': 'MA', '22': 'PI', '23': 'CE', '24': 'RN', '25': 'PB', '26': 'PE', '27': 'AL', '28': 'SE', '29': 'BA',
@@ -46,21 +46,20 @@ def processar_dados(df):
     df_long[['Regiao', 'Estado', 'Municipio']] = pd.DataFrame(geos.tolist(), index=df_long.index)
     return df_long
 
-st.title("📊 Calculador de Tendência Científica (Hamed & Rao)")
-st.markdown("Baseado no modelo de análise para publicações epidemiológicas.")
+st.title("📊 Análise de Tendência: Mann-Kendall (Hamed & Rao)")
+st.markdown("Metodologia baseada na aula de **Ecológicos Avançados**.")
 
-uploaded_file = st.file_uploader("Suba o arquivo CSV do TabNet", type=['csv'])
+uploaded_file = st.file_uploader("Suba o arquivo CSV (Dengue, Hanseníase, etc)", type=['csv'])
 
 if uploaded_file:
     try:
-        # Carregamento robusto para o padrão DATASUS
         df_raw = pd.read_csv(uploaded_file, sep=';', encoding='ISO-8859-1')
         df_raw = df_raw[~df_raw.iloc[:, 0].astype(str).str.contains('Total|TOTAL|Incompleto|Fonte', na=False)]
         df_final = processar_dados(df_raw)
         
         if df_final is not None:
-            st.sidebar.header("🔍 Configurações")
-            nivel = st.sidebar.radio("Abrangência:", ("País (Total)", "Região", "Estado", "Município"))
+            st.sidebar.header("📍 Filtros Geográficos")
+            nivel = st.sidebar.radio("Nível:", ("País (Total)", "Região", "Estado", "Município"))
             
             if nivel == "País (Total)":
                 df_temp = df_final
@@ -79,54 +78,56 @@ if uploaded_file:
                 df_temp = df_final[df_final['Municipio'] == mun]
                 label = mun
 
+            # Agrupa dados por ano
             serie = df_temp.groupby('Ano')['Casos'].sum().sort_index()
 
             if len(serie) > 3:
                 # CÁLCULOS ESTATÍSTICOS
-                # 1. Hamed e Rao para significância (P e Z) corrigida
+                # Teste modificado para obter P e Z corrigidos
                 res_hr = mk.hamed_rao_modification_test(serie)
-                # 2. Teste Original para extração do Tau de Kendall
+                # Teste original apenas para extrair o Tau de Kendall
                 res_orig = mk.original_test(serie)
                 
-                # --- TABELA DE RESULTADOS (Conforme o Modelo Solicitado) ---
-                st.subheader(f"Métricas do Teste: {label}")
-                metrics_table = pd.DataFrame({
+                # --- TABELA DE RESULTADOS (IDÊNTICA AO MODELO) ---
+                st.subheader(f"Métricas do Teste - {label}")
+                metrics_data = {
                     "Métrica": ["Tendência", "h", "Valor-p", "Estatística Z", "Tau de Kendall", "Inclinação de Sen"],
                     "Resultado": [
                         res_hr.trend, 
-                        str(res_hr.h), 
+                        res_hr.h, 
                         f"{res_hr.p:.8f}", 
                         f"{res_hr.z:.8f}", 
                         f"{res_orig.tau:.8f}", 
                         f"{res_hr.slope:.8f}"
                     ]
-                })
-                st.table(metrics_table)
+                }
+                st.table(pd.DataFrame(metrics_data))
 
                 # --- GRÁFICO ---
+                [Image of Mann-Kendall trend plot with Sen's slope line]
                 fig, ax = plt.subplots(figsize=(12, 6))
                 
-                # Plotagem dos dados reais
+                # Pontos e linha dos dados reais
                 sns.lineplot(x=serie.index, y=serie.values, marker='o', markersize=8, 
-                             color='#34495e', label='Dados Observados', ax=ax, linewidth=1.5)
+                             color='#2c3e50', label='Dados Observados', ax=ax, linewidth=1.5)
                 
-                # Plotagem da Reta de Tendência
+                # Reta de Tendência (Sen's Slope)
                 x_idx = np.arange(len(serie))
                 intercept = np.median(serie.values) - res_hr.slope * np.median(x_idx)
                 y_trend = res_hr.slope * x_idx + intercept
                 
-                ax.plot(serie.index, y_trend, color='#c0392b', linestyle='--', 
-                        linewidth=2, label=f'Reta de Tendência (Sen Slope)')
+                ax.plot(serie.index, y_trend, color='#e74c3c', linestyle='--', 
+                        linewidth=2.5, label=f'Tendência (Inclinação: {res_hr.slope:.2f})')
 
-                ax.set_title(f"Comportamento Temporal e Tendência - {label}", fontsize=14)
-                ax.set_ylabel("Quantidade")
+                ax.set_title(f"Série Temporal e Reta de Tendência: {label}", fontsize=15)
+                ax.set_ylabel("Quantidade de Casos")
                 plt.xticks(serie.index)
-                plt.grid(True, linestyle=':', alpha=0.5)
+                plt.grid(True, linestyle=':', alpha=0.6)
                 plt.legend()
                 
                 st.pyplot(fig)
                 
             else:
-                st.info("Série muito curta para análise.")
+                st.info("Série temporal muito curta.")
     except Exception as e:
-        st.error(f"Erro na análise: {e}")
+        st.error(f"Erro no processamento: {e}")
