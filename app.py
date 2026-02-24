@@ -8,7 +8,7 @@ import numpy as np
 
 st.set_page_config(page_title="Analista Epidemiológico Pro", layout="wide")
 
-# Tabelas de Apoio Geográfico (IBGE)
+# Mapeamento Geográfico Brasileiro (IBGE)
 MAPA_ESTADOS = {
     '11': 'RO', '12': 'AC', '13': 'AM', '14': 'RR', '15': 'PA', '16': 'AP', '17': 'TO',
     '21': 'MA', '22': 'PI', '23': 'CE', '24': 'RN', '25': 'PB', '26': 'PE', '27': 'AL', '28': 'SE', '29': 'BA',
@@ -80,13 +80,13 @@ if uploaded_file:
             serie = df_temp.groupby('Ano')['Casos'].sum().sort_index()
 
             if len(serie) > 3:
-                # CÁLCULOS ESTATÍSTICOS
-                # 1. Hamed e Rao para P e Z corrigidos
+                # 1. Hamed e Rao para P-valor e Z corrigidos pela autocorrelação
                 res_hr = mk.hamed_rao_modification_test(serie)
-                # 2. Teste Original para extrair o Tau de Kendall
+                
+                # 2. Teste original apenas para obter o coeficiente Tau (idêntico em ambos os testes)
                 res_orig = mk.original_test(serie)
                 
-                # --- TABELA DE RESULTADOS (PADRÃO PESQUISA AÍ) ---
+                # --- TABELA DE MÉTRICAS (PADRÃO AULA 4) ---
                 st.subheader(f"Métricas do Teste - {label}")
                 metrics_data = {
                     "Métrica": ["Tendência", "h", "Valor-p", "Estatística Z", "Tau de Kendall", "Inclinação de Sen"],
@@ -104,11 +104,11 @@ if uploaded_file:
                 # --- GRÁFICO ---
                 fig, ax = plt.subplots(figsize=(12, 6))
                 
-                # Dados observados
+                # Plotagem dos dados observados
                 sns.lineplot(x=serie.index, y=serie.values, marker='o', markersize=8, 
                              color='#2c3e50', label='Dados Observados', ax=ax, linewidth=1.5)
                 
-                # Reta de Tendência
+                # Cálculo da Reta de Tendência (Sen's Slope)
                 x_idx = np.arange(len(serie))
                 intercept = np.median(serie.values) - res_hr.slope * np.median(x_idx)
                 y_trend = res_hr.slope * x_idx + intercept
